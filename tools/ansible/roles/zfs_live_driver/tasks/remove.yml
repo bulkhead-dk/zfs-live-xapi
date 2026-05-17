@@ -1,0 +1,40 @@
+---
+# Remove path: installer.sh remove + remove-mode post-flight.
+# No rollback (inverting a destructive op is messier than re-attempting).
+
+- name: Run installer.sh remove
+  ansible.builtin.raw: bash {{ deploy_path }}/installer.sh remove
+  register: installer_run
+  changed_when: true
+  failed_when: installer_run.rc != 0
+
+- name: Installer output
+  ansible.builtin.debug:
+    var: installer_run.stdout_lines
+
+- name: Post-flight — xapi-storage-script still active
+  ansible.builtin.raw: systemctl is-active --quiet xapi-storage-script
+  register: post_xss
+  changed_when: false
+  failed_when: post_xss.rc != 0
+
+- name: Post-flight — driver removed
+  ansible.builtin.raw: xe sm-list type=zfs-live
+  register: post_smlist
+  changed_when: false
+
+- name: Post-flight — driver registration is empty
+  ansible.builtin.assert:
+    that:
+      - "'uuid' not in post_smlist.stdout"
+    fail_msg: >-
+      installer.sh remove exited 0 but `xe sm-list type=zfs-live`
+      still lists the driver. Inspect
+      /var/log/xapi-storage-script.log on the host.
+    quiet: true
+
+- name: Done
+  ansible.builtin.debug:
+    msg: >-
+      Remove complete on {{ inventory_hostname }}.
+      xapi-storage-script alive; driver no longer registered.

@@ -1,0 +1,26 @@
+---
+# Pre-flight checks: xapi-storage-script alive, xe resolves, ZFS
+# module loaded (install only). All raw-only — XCP-ng dom0 ships
+# Python 3.6.8.
+
+- name: Pre-flight — xapi-storage-script is active
+  ansible.builtin.raw: systemctl is-active --quiet xapi-storage-script
+  register: pre_xss
+  changed_when: false
+  failed_when: pre_xss.rc != 0
+
+- name: Pre-flight — xe CLI resolves
+  ansible.builtin.raw: command -v xe
+  register: pre_xe
+  changed_when: false
+  failed_when: pre_xe.rc != 0
+
+# ZFS module check is install-only. Removal doesn't need ZFS to be
+# loaded — the operator may legitimately be tearing down on a host
+# where they've already unloaded the module.
+- name: Pre-flight — ZFS module loaded (install only)
+  ansible.builtin.raw: lsmod | awk '$1=="zfs" {found=1} END {exit !found}'
+  register: pre_zfs
+  changed_when: false
+  failed_when: pre_zfs.rc != 0
+  when: driver_action == 'install'

@@ -1,0 +1,54 @@
+---
+# Install path: run installer.sh + install-mode post-flight.
+
+- name: Run installer.sh install
+  ansible.builtin.raw: bash {{ deploy_path }}/installer.sh install
+  register: installer_run
+  changed_when: true
+  # Surface the installer's stderr verbatim on failure — the
+  # script's error messages are the operator's primary diagnostic.
+  failed_when: installer_run.rc != 0
+
+- name: Installer output
+  ansible.builtin.debug:
+    var: installer_run.stdout_lines
+
+- name: Post-flight — native xapi-storage-script active
+  ansible.builtin.raw: systemctl is-active --quiet xapi-storage-script
+  register: post_xss
+  changed_when: false
+  failed_when: post_xss.rc != 0
+
+- name: Post-flight — driver registered
+  # `xe sm-list type=zfs-live` (verbose form) emits a uuid line when
+  # the driver is registered, nothing when it's not.
+  ansible.builtin.raw: xe sm-list type=zfs-live
+  register: post_smlist
+  changed_when: false
+
+- name: Post-flight — driver registration is non-empty
+  ansible.builtin.assert:
+    that:
+      - "'uuid' in post_smlist.stdout"
+    fail_msg: >-
+      installer.sh exited 0 but `xe sm-list type=zfs-live` is
+      empty — driver did not register with xapi. Inspect
+      /var/log/xapi-storage-script.log on the host.
+    quiet: true
+
+- name: Post-flight — plugin sentinel files present
+  ansible.builtin.raw: test -f {{ item }}
+  register: post_sentinel
+  changed_when: false
+  failed_when: post_sentinel.rc != 0
+  loop:
+    - "{{ plugin_volume_sentinel }}"
+    - "{{ plugin_datapath_sentinel }}"
+
+- name: Done
+  ansible.builtin.debug:
+    msg: >-
+      Install complete on {{ inventory_hostname }}.
+      Driver registered; native xapi-storage-script dispatches via symlinks.
+      Pre-install backup at {{ backup_dir }}/{{ backup_basename }}
+      (kept for {{ backup_retention_days }} days for manual rollback).
