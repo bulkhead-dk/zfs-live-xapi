@@ -1,0 +1,88 @@
+---
+# Restore plugin dirs from a pre-install backup tarball. Triggered
+# from main.yml's rescue block when install or post-flight failed.
+#
+# Strategy: rm -rf the (potentially partial) plugin dirs, extract
+# the tarball back to /, restart services. The tar paths are
+# absolute-relative-to-/ from how backup_state.yml created them,
+# so tar -xzf -C / restores them in place.
+#
+# Empty tarball case (fresh host, no prior plugin dirs): nothing to
+# extract, just leave the partial install state cleared and the
+# native daemon restarted. The host ends up matching its pre-install
+# state: no driver registered.
+
+- name: Stop services before restore
+  ansible.builtin.raw: systemctl stop xapi-storage-script
+  changed_when: true
+  failed_when: false
+
+- name: Clear potentially-partial plugin directories and native-root symlinks
+  ansible.builtin.raw: >-
+    rm -rf {{ plugin_volume_dir }} {{ plugin_datapath_dir }}
+    /usr/libexec/xapi-storage-script/volume/org.xen.xapi.storage.zfs-live
+    /usr/libexec/xapi-storage-script/datapath/raw+qdisk
+  changed_when: true
+  failed_when: false
+
+- name: Probe whether backup tarball has any files
+  ansible.builtin.raw: tar tzf {{ backup_dir }}/{{ backup_basename }} | head -1
+  register: backup_contents
+  changed_when: false
+
+- name: Extract pre-install plugin state (when not empty)
+  ansible.builtin.raw: tar xzf {{ backup_dir }}/{{ backup_basename }} -C /
+  register: restore_extract
+  changed_when: true
+  failed_when: restore_extract.rc != 0
+  when: (backup_contents.stdout | trim | length) > 0
+
+- name: Recreate native-root symlinks if plugin dirs were restored
+  ansible.builtin.raw: |
+    if [ -d "{{ plugin_volume_dir }}" ]; then
+      ln -sfn "{{ plugin_volume_dir }}" \
+        /usr/libexec/xapi-storage-script/volume/org.xen.xapi.storage.zfs-live
+    fi
+    if [ -d "{{ plugin_datapath_dir }}" ]; then
+      ln -sfn "{{ plugin_datapath_dir }}" \
+        /usr/libexec/xapi-storage-script/datapath/raw+qdisk
+    fi
+  changed_when: true
+  failed_when: false
+  when: (backup_contents.stdout | trim | length) > 0
+
+- name: Restart services after restore
+  ansible.builtin.raw: systemctl start xapi-storage-script
+  changed_when: true
+  failed_when: false
+
+- name: Wait for services to come back
+  ansible.builtin.raw: |
+    for i in $(seq 1 30); do
+      if systemctl is-active --quiet xapi-storage-script; then
+        exit 0
+      fi
+      sleep 1
+    done
+    exit 1
+  register: post_restore_xss
+  changed_when: false
+  failed_when: post_restore_xss.rc != 0
+
+- name: Verify post-restore driver registration matches pre-install
+  # If the backup tar was empty, no driver should be registered now.
+  # If it had content, the driver should be back. We log the state
+  # rather than asserting one specific shape — the rescue path's
+  # job is "host is no worse off than before," not "host is in a
+  # specific state."
+  ansible.builtin.raw: xe sm-list type=zfs-live --minimal
+  register: post_restore_smlist
+  changed_when: false
+
+- name: Restore complete
+  ansible.builtin.debug:
+    msg:
+      - "Rollback complete on {{ inventory_hostname }}."
+      - "Pre-install backup: {{ backup_dir }}/{{ backup_basename }}"
+      - "Driver registration after restore: {{ post_restore_smlist.stdout | trim if (post_restore_smlist.stdout | trim | length) > 0 else '(none)' }}"
+      - "Services restored to pre-install state."

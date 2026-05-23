@@ -1,0 +1,81 @@
+---
+# zfs_live_driver role — top-level dispatch.
+#
+# Install path: pre-flight → snapshot current plugin state to a
+# tarball → block { sync + installer.sh install + post-flight }
+# / rescue { restore tarball + fail with original cause }.
+#
+# Remove path: pre-flight → installer.sh remove → post-flight.
+# No rollback on remove — if `installer.sh remove` fails the host
+# is in some intermediate state but the operator's recovery path
+# is the same as it'd be without the role (re-run install, then
+# re-try remove). Rollback there would be inverting a destructive
+# operation, which is messier than re-attempting it.
+
+- name: Required variable check
+  ansible.builtin.assert:
+    that:
+      - driver_action in ['install', 'remove']
+    fail_msg: |
+      -e driver_action=<install|remove>
+      (default: install)
+    quiet: true
+  delegate_to: localhost
+  run_once: true
+
+- name: Pre-flight
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Sync source tree to {{ deploy_path }}/
+  # Sync runs unconditionally — both install and remove need
+  # installer.sh on the host. /tmp is non-durable; refilling
+  # deploy_path is cheap and removes cross-run-state dependency.
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir | dirname | dirname }}/"
+    dest: "{{ deploy_path }}/"
+    delete: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=__pycache__"
+      - "--exclude=.pytest_cache"
+      - "--exclude=*.pyc"
+      - "--exclude=tests/e2e-*-run-*.log"
+
+- name: Install path with rollback
+  when: driver_action == 'install'
+  block:
+
+    - name: Snapshot current plugin state (pre-install backup)
+      ansible.builtin.import_tasks: backup_state.yml
+
+    - name: Run install + post-flight
+      ansible.builtin.import_tasks: install.yml
+
+  rescue:
+
+    - name: Surface install failure before rollback
+      ansible.builtin.debug:
+        msg: >-
+          installer.sh install or post-flight failed. Restoring the
+          pre-install plugin state from
+          {{ backup_dir }}/{{ backup_basename | default('(no snapshot taken)') }}
+          and re-asserting the prior driver registration. The
+          original error follows in the play recap.
+
+    - name: Restore plugin state from pre-install backup
+      ansible.builtin.import_tasks: restore_state.yml
+      when: backup_basename is defined
+
+    - name: Re-raise install failure after rollback
+      ansible.builtin.fail:
+        msg: >-
+          install rolled back to pre-install state. See preceding
+          task output for the originating cause.
+
+- name: Remove path
+  ansible.builtin.import_tasks: remove.yml
+  when: driver_action == 'remove'
+
+- name: Rotate old pre-install backups
+  ansible.builtin.import_tasks: rotate_backups.yml
+  when: driver_action == 'install'

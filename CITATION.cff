@@ -1,0 +1,52 @@
+# Citation File Format 1.2.0 — https://citation-file-format.github.io/
+#
+# Both GitHub and Forgejo surface this file as a "Cite this repository"
+# panel. Tools like Zotero, Pandoc, and the GitHub API consume the
+# format directly.
+#
+# Operator note: at tag time update `version:` and `date-released:`
+# to match the new tag, alongside renaming [Unreleased] → [X.Y.Z]
+# in CHANGELOG.md.
+
+cff-version: 1.2.0
+message: "If you use zfs-live in academic work, please cite it as below."
+title: "zfs-live: a ZFS SMAPIv3 storage driver for XAPI"
+authors:
+  - family-names: Wolffhechel
+    given-names: Jakob
+    email: jakob@wolffhechel.dk
+type: software
+license: LicenseRef-Moksha-Source-Available
+repository-code: "https://git.bulkhead.dk/storage/zfs-live"
+url: "https://git.bulkhead.dk/storage/zfs-live"
+abstract: >-
+  zfs-live is a SMAPIv3 storage driver for XAPI-compatible
+  hypervisors that exposes native ZFS features (compression,
+  copies, snapshots, clones, send/receive, scrub) through XAPI's
+  Volume API v5. Each VDI is a ZFS zvol; the driver symlinks into
+  the native xapi-storage-script daemon for SM registration and
+  dispatch, with an xe CLI wrapper for native ZFS send/receive
+  on VDI copy operations.
+keywords:
+  - XAPI
+  - ZFS
+  - SMAPIv3
+  - storage
+  - virtualization
+  - Xen
+  - block storage
+  - snapshots
+  - changed block tracking
+
+version: "1.0.0"
+date-released: "2026-05-11"
+
+preferred-citation:
+  type: software
+  title: "zfs-live: a ZFS SMAPIv3 storage driver for XAPI"
+  authors:
+    - family-names: Wolffhechel
+      given-names: Jakob
+  url: "https://git.bulkhead.dk/storage/zfs-live"
+  version: "1.0.0"
+  year: 2026
