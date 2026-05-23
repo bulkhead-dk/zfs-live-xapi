@@ -1,0 +1,56 @@
+---
+# Install or remove the zfs-live SMAPIv3 driver on an XCP-ng host.
+# Thin wrapper around the `zfs_live_driver` role (#149) — all logic
+# (pre-flight, sync, action, post-flight, atomic rollback) lives in
+# `roles/zfs_live_driver/`. This file preserves the operator
+# interface (`-e driver_action=install|remove`, `-l <host>`) so existing
+# invocations of install-driver.yml from deploy.yml, teardown.yml,
+# and operator scripts continue to work unchanged.
+#
+# Tracking: #135 (original playbook), #149 (role-promotion).
+#
+# Operator workflow
+# -----------------
+#   ansible-playbook tools/ansible/install-driver.yml \
+#     -i <your-inventory.ini> \
+#     -l xcpng-target-1
+#
+#   # Or against a pool:
+#   ansible-playbook tools/ansible/install-driver.yml \
+#     -i <your-inventory.ini> \
+#     -l sxm_targets
+#
+#   # Removal:
+#   ansible-playbook tools/ansible/install-driver.yml \
+#     -i <your-inventory.ini> \
+#     -l xcpng-target-1 \
+#     -e driver_action=remove
+#
+# What's new vs. the pre-#149 single-file playbook
+# ------------------------------------------------
+# Atomic rollback: install now tars the current plugin state to
+# /var/cache/zfs-live-backup/<timestamp>.tar.gz before installer.sh
+# runs; on any install-side failure (installer.sh non-zero or
+# post-flight assertion failure) the role's rescue block restores
+# the prior state and re-raises the original failure. The host is
+# never left in a half-installed state.
+#
+# See README for the full role contract.
+
+- name: Install / remove zfs-live SMAPIv3 driver
+  hosts: all
+  # `gather_facts: false` is load-bearing on this wrapper. XCP-ng
+  # 8.3 dom0 ships Python 3.6.8 and ansible-core 2.20 needs 3.7+
+  # for module-runtime; `gather_facts: true` would invoke the
+  # `setup` module on the host before any of our raw-only tasks
+  # run, which would fail on the very hosts the role is meant to
+  # support. Caught at review on PR #150.
+  #
+  # The role's backup_state.yml uses
+  # `ansible_date_time.epoch | default(lookup('pipe', 'date +%s'))`
+  # — with fact gathering off, the lookup runs on the control
+  # node and produces an equivalent epoch timestamp.
+  gather_facts: false
+
+  roles:
+    - zfs_live_driver

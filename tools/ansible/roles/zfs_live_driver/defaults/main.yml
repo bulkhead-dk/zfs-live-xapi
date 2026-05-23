@@ -1,0 +1,32 @@
+---
+# Defaults for the zfs_live_driver role. Override on the CLI with
+# `-e key=value` or in role-vars.
+
+# Action mode: install or remove.
+driver_action: install
+
+# Where the source tree gets staged on the host before installer.sh
+# runs. installer.sh expects to find itself + the rest of the source
+# at this path.
+deploy_path: /tmp/zfs-live
+
+# Plugin sentinel files the post-flight checks for. If installer.sh
+# changes layout, update these in lockstep.
+plugin_volume_sentinel: /usr/libexec/zfs-live-plugins/volume/org.xen.xapi.storage.zfs-live/Volume.create
+plugin_datapath_sentinel: /usr/libexec/zfs-live-plugins/datapath/raw+qdisk/Datapath.attach
+
+# Plugin directories that backup_state.yml tars before install runs,
+# and that restore_state.yml extracts to on rollback.
+plugin_volume_dir: /usr/libexec/zfs-live-plugins/volume/org.xen.xapi.storage.zfs-live
+plugin_datapath_dir: /usr/libexec/zfs-live-plugins/datapath/raw+qdisk
+
+# Where pre-install state snapshots land. One tarball per install
+# attempt, named by epoch. Survives across runs so an operator who
+# notices a regression an hour after the install can manually
+# restore.
+backup_dir: /var/cache/zfs-live-backup
+
+# Drop pre-install backups older than this many days. The file
+# itself is small (a few hundred KB), but old backups against a
+# long-removed driver layout are noise.
+backup_retention_days: 7

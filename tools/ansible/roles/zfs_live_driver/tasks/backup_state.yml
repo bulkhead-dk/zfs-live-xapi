@@ -1,0 +1,44 @@
+---
+# Snapshot the current plugin directories to a timestamped tarball.
+# Runs before install so the rescue block has something to restore
+# to on any install-side failure.
+#
+# Tarball includes the plugin volume + datapath dirs as they exist
+# right now (the *previous* version's files) — typically what's
+# being replaced by this install run. On a fresh host that's never
+# had the driver, both dirs are absent and tar emits an empty
+# archive cleanly (the `if [ -d ]` guards keep tar from erroring on
+# missing paths).
+
+- name: Compute backup timestamp
+  ansible.builtin.set_fact:
+    backup_basename: "pre-install-{{ ansible_date_time.epoch | default(lookup('pipe', 'date +%s')) }}.tar.gz"
+
+- name: Ensure backup directory exists
+  ansible.builtin.raw: mkdir -p {{ backup_dir }}
+  changed_when: false
+
+- name: Tar current plugin state to {{ backup_dir }}/{{ backup_basename }}
+  # Best-effort: if neither plugin dir exists (fresh host), the
+  # tar produces an empty archive and that's fine. The restore
+  # task handles empty-archive case as "no prior state to restore."
+  ansible.builtin.raw: |
+    set -e
+    cd /
+    paths=""
+    if [ -d "{{ plugin_volume_dir }}" ]; then
+      paths="$paths {{ plugin_volume_dir | regex_replace('^/', '') }}"
+    fi
+    if [ -d "{{ plugin_datapath_dir }}" ]; then
+      paths="$paths {{ plugin_datapath_dir | regex_replace('^/', '') }}"
+    fi
+    if [ -n "$paths" ]; then
+      tar czf {{ backup_dir }}/{{ backup_basename }} $paths
+    else
+      # Fresh host — tar an empty marker so restore_state has
+      # something to detect a "fresh" baseline.
+      tar czf {{ backup_dir }}/{{ backup_basename }} -T /dev/null
+    fi
+  register: backup_tar
+  changed_when: true
+  failed_when: backup_tar.rc != 0

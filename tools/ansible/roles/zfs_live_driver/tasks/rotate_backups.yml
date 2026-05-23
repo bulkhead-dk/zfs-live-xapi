@@ -1,0 +1,13 @@
+---
+# Drop pre-install backups older than backup_retention_days.
+# Best-effort — failure to rotate isn't a reason to fail the
+# install (the backup directory grows but doesn't break anything).
+
+- name: Rotate old pre-install backups (older than {{ backup_retention_days }} days)
+  ansible.builtin.raw: |
+    if [ -d {{ backup_dir }} ]; then
+      find {{ backup_dir }} -type f -name 'pre-install-*.tar.gz' \
+        -mtime +{{ backup_retention_days }} -delete
+    fi
+  changed_when: false
+  failed_when: false
